@@ -3,56 +3,72 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 
 const manifest = {
-    id: 'community.locke.indexer.catalog',
-    version: '2.3.0',
+    id: 'community.locke.final.catalog',
+    version: '2.5.0',
     name: 'Locke Anime Catalog',
-    description: 'Latest releases for Locke from Nyaa',
+    description: 'Latest releases for Locke (Nyaa/Anirena Proxy)',
     resources: ['catalog', 'meta', 'stream'],
     types: ['anime'],
     idPrefixes: ['locke:'],
     catalogs: [{
         type: 'anime',
         id: 'locke_main',
-        name: 'Locke Latest',
-        extra: [{ name: 'search', isRequired: false }]
+        name: 'Locke Latest'
     }]
 };
 
 const builder = new addonBuilder(manifest);
 
-const DEFAULT_POSTER = 'https://placehold.jp';
+// Χρησιμοποιούμε έναν Proxy για το Nyaa για να μην μπλοκάρεται το Render
+const NYAA_PROXY = "https://nyaa.si";
 
 builder.defineCatalogHandler(async (args) => {
-    let query = "Locke"; // Αλλαγή σε Locke
-    if (args.extra && args.extra.search) query = `Locke ${args.extra.search}`;
-
-    const url = `https://nyaa.si{encodeURIComponent(query)}`;
-    
     try {
+        const url = `${NYAA_PROXY}${encodeURIComponent("Locke")}`;
         const { data } = await axios.get(url, { 
-            headers: { 'User-Agent': 'Mozilla/5.0' },
-            timeout: 10000 
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+            timeout: 15000 
         });
         const $ = cheerio.load(data);
         const metas = [];
 
-        // Scrape Nyaa.si
+        // Scraper για το Nyaa
         $('tr').each((i, el) => {
             const title = $(el).find('td[colspan="2"] a').last().text().trim();
-            // Φιλτράρισμα για να περιέχει οπωσδήποτε τη λέξη Locke
-            if (title.toLowerCase().includes('locke') && metas.length < 20) {
+            if (title.toLowerCase().includes('locke') && metas.length < 15) {
                 metas.push({
                     id: `locke:${Buffer.from(title).toString('base64')}`,
                     name: title,
                     type: 'anime',
-                    poster: DEFAULT_POSTER
+                    poster: 'https://placehold.jp'
                 });
             }
         });
 
-        return { metas };
+        if (metas.length === 0) throw new Error("No items found");
+        return { metas: metas };
     } catch (e) {
-        return { metas: [] };
+        console.log("Nyaa failed, checking Anirena...");
+        // Fallback στο Anirena αν το Nyaa αποτύχει
+        try {
+            const { data } = await axios.get("https://anirena.com");
+            const $ = cheerio.load(data);
+            const metas = [];
+            $('.torrent-box, tr').each((i, el) => {
+                const title = $(el).find('a').first().text().trim();
+                if (title.toLowerCase().includes('locke') && metas.length < 15) {
+                    metas.push({
+                        id: `locke:${Buffer.from(title).toString('base64')}`,
+                        name: title,
+                        type: 'anime',
+                        poster: 'https://placehold.jp'
+                    });
+                }
+            });
+            return { metas: metas };
+        } catch (err) {
+            return { metas: [] };
+        }
     }
 });
 
@@ -63,7 +79,7 @@ builder.defineMetaHandler(async (args) => {
             id: args.id,
             name: title,
             type: 'anime',
-            poster: DEFAULT_POSTER,
+            poster: 'https://placehold.jp',
             description: `Release: ${title}`
         }
     };
@@ -72,19 +88,19 @@ builder.defineMetaHandler(async (args) => {
 builder.defineStreamHandler(async (args) => {
     const title = Buffer.from(args.id.replace('locke:', ''), 'base64').toString();
     try {
-        const url = `https://nyaa.si{encodeURIComponent(title)}`;
+        const url = `${NYAA_PROXY}${encodeURIComponent(title)}`;
         const { data } = await axios.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
         const $ = cheerio.load(data);
         const magnet = $('a[href^="magnet:"]').first().attr('href');
 
         if (magnet) {
-            const hashMatch = magnet.match(/btih:([a-zA-Z0-9]+)/);
-            if (hashMatch && hashMatch[1]) {
+            const hash = magnet.match(/btih:([a-zA-Z0-9]+)/);
+            if (hash && hash[1]) {
                 return {
                     streams: [{
                         name: "Locke Player",
                         title: title,
-                        infoHash: hashMatch[1].toLowerCase()
+                        infoHash: hash[1].toLowerCase()
                     }]
                 };
             }
@@ -96,4 +112,4 @@ builder.defineStreamHandler(async (args) => {
 });
 
 const port = process.env.PORT || 7000;
-serveHTTP(builder.getInterface(), { port });
+serveHTTP(builder.getInterface(), { port: port });
