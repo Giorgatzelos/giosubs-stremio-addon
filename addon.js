@@ -4,9 +4,9 @@ const cheerio = require('cheerio');
 
 const manifest = {
     id: 'community.giosubs.anirena.catalog',
-    version: '1.5.0',
+    version: '1.6.0',
     name: 'GioSubs Anirena Catalog',
-    description: 'Κατάλογος [GioSubs] απευθείας από Anirena & 1337x',
+    description: 'Κατάλογος [GioSubs] από Anirena',
     resources: ['catalog', 'stream', 'meta'],
     types: ['anime'],
     idPrefixes: ['giosubs:'],
@@ -31,9 +31,82 @@ async function fetchPoster(title) {
             return res.data.data[0].attributes.posterImage.small;
         }
     } catch (e) {
-        return 'https://placehold.jp';
+        console.error("Poster error");
     }
     return 'https://placehold.jp';
+}
+
+// 1. Κατάλογος από το Anirena
+builder.defineCatalogHandler(async (args) => {
+    try {
+        const url = "https://anirena.com";
+        const { data } = await axios.get(url);
+        const $ = cheerio.load(data);
+        const metas = [];
+
+        $('.torrent-box, tr').each((i, el) => {
+            const title = $(el).find('a').first().text().trim();
+            if (title.includes('[GioSubs]') && metas.length < 20) {
+                metas.push({
+                    id: `giosubs:${Buffer.from(title).toString('base64')}`,
+                    name: title,
+                    type: 'anime',
+                    poster: 'https://placehold.jp'
+                });
+            }
+        });
+        return { metas };
+    } catch (e) {
+        return { metas: [] };
+    }
+});
+
+// 2. Meta Handler
+builder.defineMetaHandler(async (args) => {
+    const title = Buffer.from(args.id.replace('giosubs:', ''), 'base64').toString();
+    const poster = await fetchPoster(title);
+    return {
+        meta: {
+            id: args.id,
+            name: title,
+            type: 'anime',
+            poster: poster,
+            description: `GioSubs Release: ${title}`
+        }
+    };
+});
+
+// 3. Stream Handler
+builder.defineStreamHandler(async (args) => {
+    const title = Buffer.from(args.id.replace('giosubs:', ''), 'base64').toString();
+    try {
+        const searchUrl = `https://anirena.com{encodeURIComponent(title)}`;
+        const { data } = await axios.get(searchUrl);
+        const $ = cheerio.load(data);
+        
+        // Ψάχνουμε το magnet link στη σελίδα των αποτελεσμάτων
+        const magnet = $('a[href^="magnet:"]').first().attr('href');
+        
+        if (magnet) {
+            const hashMatch = magnet.match(/btih:([a-zA-Z0-9]+)/);
+            if (hashMatch && hashMatch[1]) {
+                return {
+                    streams: [{
+                        name: "GioSubs Anirena",
+                        title: title,
+                        infoHash: hashMatch[1].toLowerCase()
+                    }]
+                };
+            }
+        }
+        return { streams: [] };
+    } catch (e) {
+        return { streams: [] };
+    }
+});
+
+const port = process.env.PORT || 7000;
+serveHTTP(builder.getInterface(), { port });
 }
 
 // 1. Κατάλογος από το Anirena
