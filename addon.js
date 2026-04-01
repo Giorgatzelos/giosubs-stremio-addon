@@ -3,12 +3,12 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 
 const manifest = {
-    id: 'community.giosubs.kitsu.catalog',
-    version: '1.2.1',
-    name: 'GioSubs Anime Catalog',
-    description: 'Αυτόματος κατάλογος [GioSubs] με posters από Kitsu',
+    id: 'community.giosubs.catalog',
+    version: '1.1.0',
+    name: 'GioSubs Catalog',
+    description: 'Κατάλογος Anime από [GioSubs] (Anirena & 1337x)',
     resources: ['catalog', 'stream', 'meta'],
-    types: ['anime', 'series'],
+    types: ['anime', 'series', 'movie'],
     idPrefixes: ['giosubs:'],
     catalogs: [
         {
@@ -22,89 +22,69 @@ const manifest = {
 
 const builder = new addonBuilder(manifest);
 
-// Συνάρτηση για αναζήτηση Poster από το Kitsu
-async function getKitsuPoster(name) {
-    try {
-        const cleanName = name.replace(/\[.*?\]/g, "").trim();
-        const resp = await axios.get(`https://kitsu.io[text]=${encodeURIComponent(cleanName)}&page[limit]=1`);
-        if (resp.data.data && resp.data.data.length > 0) {
-            return resp.data.data[0].attributes.posterImage.small;
-        }
-    } catch (e) {
-        return 'https://placehold.jp';
-    }
-    return 'https://placehold.jp';
-}
-
-// 1. Δημιουργία του Καταλόγου
+// 1. Δημιουργία του Καταλόγου (Εμφάνιση στην αρχική)
 builder.defineCatalogHandler(async (args) => {
-    const url = `https://anirena.com[GioSubs]`;
+    const url = `https://anirena.com[GioSubs]`; // Παράδειγμα από Anirena
     try {
         const { data } = await axios.get(url);
         const $ = cheerio.load(data);
         const metas = [];
 
-        const rows = $('.torrent-box, tr').toArray();
-        for (const el of rows.slice(0, 15)) {
-            const title = $(el).find('a').first().text().trim();
+        $('.torrent-box, tr').each((i, el) => {
+            const title = $(el).find('a').text().trim();
             if (title.includes('[GioSubs]')) {
-                const poster = await getKitsuPoster(title);
                 metas.push({
-                    id: `giosubs:${Buffer.from(title).toString('base64')}`,
+                    id: `giosubs:${Buffer.from(title).toString('base64')}`, // Δημιουργούμε μοναδικό ID
                     name: title,
                     type: 'anime',
-                    poster: poster
+                    poster: 'https://placehold.jp' // Προσωρινό poster
                 });
             }
-        }
-        return { metas };
+        });
+        return { metas: metas.slice(0, 20) };
     } catch (e) { return { metas: [] }; }
 });
 
-// 2. Meta Handler
+// 2. Μεταδεδομένα για το κάθε Item
 builder.defineMetaHandler(async (args) => {
     const title = Buffer.from(args.id.replace('giosubs:', ''), 'base64').toString();
-    const poster = await getKitsuPoster(title);
     return {
         meta: {
             id: args.id,
             name: title,
             type: 'anime',
-            poster: poster,
-            description: `GioSubs Release: ${title}`
+            poster: 'https://placehold.jp',
+            description: `Αρχείο από GioSubs: ${title}`
         }
     };
 });
 
-// 3. Stream Handler
+// 3. Εύρεση των Streams (Magnet Links)
 builder.defineStreamHandler(async (args) => {
     const title = Buffer.from(args.id.replace('giosubs:', ''), 'base64').toString();
     const searchUrl = `https://1337x.to{encodeURIComponent(title)}/seeders/desc/1/`;
     
     try {
-        const { data } = await axios.get(searchUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+        const { data } = await axios.get(searchUrl);
         const $ = cheerio.load(data);
-        const firstHref = $('td.coll-1.name a').last().attr('href');
-        
-        if (firstHref) {
-            const pageData = await axios.get(`https://1337x.to${firstHref}`, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+        const streams = [];
+
+        // Εδώ παίρνουμε το πρώτο διαθέσιμο torrent
+        const firstLink = $('td.coll-1.name a').last().attr('href');
+        if (firstLink) {
+            const pageData = await axios.get(`https://1337x.to${firstLink}`);
             const $$ = cheerio.load(pageData.data);
             const magnet = $$('a[href^="magnet:"]').attr('href');
             
             if (magnet) {
-                const infoHashMatch = magnet.match(/btih:([a-zA-Z0-9]+)/);
-                if (infoHashMatch) {
-                    return {
-                        streams: [{
-                            name: "GioSubs Player",
-                            title: title,
-                            infoHash: infoHashMatch[1] // Διόρθωση εδώ για το hash
-                        }]
-                    };
-                }
+                streams.push({
+                    name: "GioSubs Player",
+                    title: title,
+                    infoHash: magnet.match(/btih:([a-zA-Z0-9]+)/)[1]
+                });
             }
         }
-        return { streams: [] };
+        return { streams };
     } catch (e) { return { streams: [] }; }
 });
 
