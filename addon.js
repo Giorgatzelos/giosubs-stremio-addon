@@ -3,35 +3,36 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 
 const manifest = {
-    id: 'community.toonshub.indexer.catalog',
-    version: '2.6.0',
-    name: 'ToonsHub Anime Catalog',
-    description: 'Latest releases for [ToonsHub] from Nyaa & Anirena',
+    id: 'community.toonshub.proxy.catalog',
+    version: '2.7.0',
+    name: 'ToonsHub Proxy Catalog',
+    description: 'Latest [ToonsHub] via Proxy',
     resources: ['catalog', 'meta', 'stream'],
     types: ['anime'],
     idPrefixes: ['toonshub:'],
     catalogs: [{
         type: 'anime',
-        id: 'toonshub_main',
+        id: 'toonshub_proxy',
         name: 'ToonsHub Latest'
     }]
 };
 
 const builder = new addonBuilder(manifest);
 
-const DEFAULT_POSTER = 'https://placehold.jp[ToonsHub]';
+// Χρησιμοποιούμε έναν εναλλακτικό mirror του Nyaa που δεν μπλοκάρει το Render
+const NYAA_MIRROR = "https://nyaa.land";
 
 builder.defineCatalogHandler(async (args) => {
     try {
-        const query = "[ToonsHub]";
-        const url = `https://nyaa.si{encodeURIComponent(query)}`;
+        const url = `${NYAA_MIRROR}${encodeURIComponent("[ToonsHub]")}`;
         const { data } = await axios.get(url, { 
             headers: { 'User-Agent': 'Mozilla/5.0' },
-            timeout: 10000 
+            timeout: 15000 
         });
         const $ = cheerio.load(data);
         const metas = [];
 
+        // Scraper για το Nyaa Mirror
         $('tr').each((i, el) => {
             const title = $(el).find('td[colspan="2"] a').last().text().trim();
             if (title.includes('[ToonsHub]') && metas.length < 15) {
@@ -39,33 +40,16 @@ builder.defineCatalogHandler(async (args) => {
                     id: `toonshub:${Buffer.from(title).toString('base64')}`,
                     name: title,
                     type: 'anime',
-                    poster: DEFAULT_POSTER
+                    poster: 'https://placehold.jp'
                 });
             }
         });
 
+        console.log(`Found ${metas.length} items`);
         return { metas: metas };
     } catch (e) {
-        // Fallback στο Anirena αν το Nyaa αποτύχει
-        try {
-            const { data } = await axios.get("https://anirena.com");
-            const $ = cheerio.load(data);
-            const metas = [];
-            $('.torrent-box, tr').each((i, el) => {
-                const title = $(el).find('a').first().text().trim();
-                if (title.includes('[ToonsHub]') && metas.length < 15) {
-                    metas.push({
-                        id: `toonshub:${Buffer.from(title).toString('base64')}`,
-                        name: title,
-                        type: 'anime',
-                        poster: DEFAULT_POSTER
-                    });
-                }
-            });
-            return { metas: metas };
-        } catch (err) {
-            return { metas: [] };
-        }
+        console.error("Mirror failed:", e.message);
+        return { metas: [] };
     }
 });
 
@@ -76,7 +60,7 @@ builder.defineMetaHandler(async (args) => {
             id: args.id,
             name: title,
             type: 'anime',
-            poster: DEFAULT_POSTER,
+            poster: 'https://placehold.jp',
             description: `ToonsHub Release: ${title}`
         }
     };
@@ -85,7 +69,7 @@ builder.defineMetaHandler(async (args) => {
 builder.defineStreamHandler(async (args) => {
     const title = Buffer.from(args.id.replace('toonshub:', ''), 'base64').toString();
     try {
-        const url = `https://nyaa.si{encodeURIComponent(title)}`;
+        const url = `${NYAA_MIRROR}${encodeURIComponent(title)}`;
         const { data } = await axios.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
         const $ = cheerio.load(data);
         const magnet = $('a[href^="magnet:"]').first().attr('href');
@@ -95,7 +79,7 @@ builder.defineStreamHandler(async (args) => {
             if (hashMatch && hashMatch[1]) {
                 return {
                     streams: [{
-                        name: "ToonsHub Player",
+                        name: "ToonsHub Proxy",
                         title: title,
                         infoHash: hashMatch[1].toLowerCase()
                     }]
