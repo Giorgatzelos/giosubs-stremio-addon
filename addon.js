@@ -6,11 +6,11 @@ const manifest = {
     id: 'community.giosubs.1337x',
     version: '1.0.0',
     name: 'GioSubs 1337x',
-    description: 'Φέρνει αποτελέσματα [GioSubs] απευθείας από mirrors του 1337x',
+    description: 'Φέρνει αποτελέσματα [GioSubs] από 1337x',
     resources: ['stream'],
     types: ['movie', 'series'],
     idPrefixes: ['tt', 'kitsu'],
-    catalogs": [],
+    catalogs: []
 };
 
 const builder = new addonBuilder(manifest);
@@ -25,10 +25,10 @@ const proxies = [
 async function getMediaName(id) {
     try {
         if (id.startsWith('kitsu:')) {
-            const resp = await axios.get(`https://anime-kitsu.strem.io/meta/anime/${id}.json`);
+            const resp = await axios.get(`https://strem.io{id}.json`);
             return resp.data.meta.name;
         } else if (id.startsWith('tt')) {
-            const resp = await axios.get(`https://v3-cinemeta.strem.io/meta/series/${id}.json`);
+            const resp = await axios.get(`https://strem.io{id}.json`);
             return resp.data.meta.name;
         }
     } catch (e) { return null; }
