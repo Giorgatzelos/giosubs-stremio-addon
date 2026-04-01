@@ -3,10 +3,10 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 
 const manifest = {
-    id: 'community.toonshub.simple.catalog',
-    version: '4.1.0',
-    name: 'ToonsHub Catalog',
-    description: 'Latest [ToonsHub] releases from Anirena',
+    id: 'community.toonshub.proxy.v5',
+    version: '5.0.0',
+    name: 'ToonsHub Proxy Catalog',
+    description: 'Latest [ToonsHub] via AllOrigins Proxy',
     resources: ['catalog', 'meta', 'stream'],
     types: ['anime'],
     idPrefixes: ['thub:'],
@@ -19,40 +19,44 @@ const manifest = {
 
 const builder = new addonBuilder(manifest);
 
-// Σταθερό Poster για να αποφύγουμε καθυστερήσεις
+// Σταθερό Poster
 const DEFAULT_POSTER = 'https://placehold.jp[ToonsHub]';
 
-builder.defineCatalogHandler(async (args) => {
+// ΣΥΝΑΡΤΗΣΗ PROXY: Χρησιμοποιεί το AllOrigins για να "κλέψει" το HTML
+async function getHTML(url) {
     try {
-        // Αναζήτηση απευθείας στο Anirena
-        const url = "https://anirena.com";
-        const response = await axios.get(url, {
-            headers: { 'User-Agent': 'Mozilla/5.0' },
-            timeout: 10000
-        });
-        
-        const $ = cheerio.load(response.data);
-        const metas = [];
-
-        // Πιο απλός selector: βρίσκουμε όλα τα links που έχουν [ToonsHub] στο κείμενο
-        $('a').each((i, el) => {
-            const title = $(el).text().trim();
-            const href = $(el).attr('href');
-
-            if (title.includes('[ToonsHub]') && href && href.includes('?id=') && metas.length < 20) {
-                metas.push({
-                    id: `thub:${Buffer.from(title).toString('base64')}`,
-                    name: title,
-                    type: 'anime',
-                    poster: DEFAULT_POSTER
-                });
-            }
-        });
-
-        return { metas: metas };
+        const proxyUrl = `https://allorigins.win{encodeURIComponent(url)}`;
+        const response = await axios.get(proxyUrl, { timeout: 15000 });
+        return response.data.contents; 
     } catch (e) {
-        return { metas: [] };
+        return null;
     }
+}
+
+builder.defineCatalogHandler(async (args) => {
+    // Ψάχνουμε στο Anirena μέσω του Proxy
+    const html = await getHTML("https://anirena.com");
+    if (!html) return { metas: [] };
+
+    const $ = cheerio.load(html);
+    const metas = [];
+
+    // Selector που πιάνει όλα τα links που περιέχουν [ToonsHub]
+    $('a').each((i, el) => {
+        const title = $(el).text().trim();
+        const href = $(el).attr('href');
+
+        if (title.includes('[ToonsHub]') && href && href.includes('?id=') && metas.length < 20) {
+            metas.push({
+                id: `thub:${Buffer.from(title).toString('base64')}`,
+                name: title,
+                type: 'anime',
+                poster: DEFAULT_POSTER
+            });
+        }
+    });
+
+    return { metas: metas };
 });
 
 builder.defineMetaHandler(async (args) => {
@@ -70,29 +74,25 @@ builder.defineMetaHandler(async (args) => {
 
 builder.defineStreamHandler(async (args) => {
     const title = Buffer.from(args.id.replace('thub:', ''), 'base64').toString();
-    try {
-        const url = `https://anirena.com{encodeURIComponent(title)}`;
-        const response = await axios.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-        const $ = cheerio.load(response.data);
-        
-        const magnet = $('a[href^="magnet:"]').first().attr('href');
-        
-        if (magnet) {
-            const hashMatch = magnet.match(/btih:([a-zA-Z0-9]+)/);
-            if (hashMatch) {
-                return {
-                    streams: [{
-                        name: "ToonsHub Player",
-                        title: title,
-                        infoHash: hashMatch[1].toLowerCase()
-                    }]
-                };
-            }
+    const html = await getHTML(`https://anirena.com{encodeURIComponent(title)}`);
+    if (!html) return { streams: [] };
+
+    const $ = cheerio.load(html);
+    const magnet = $('a[href^="magnet:"]').first().attr('href');
+
+    if (magnet) {
+        const hashMatch = magnet.match(/btih:([a-zA-Z0-9]+)/);
+        if (hashMatch) {
+            return {
+                streams: [{
+                    name: "ToonsHub Player",
+                    title: title,
+                    infoHash: hashMatch[1].toLowerCase()
+                }]
+            };
         }
-        return { streams: [] };
-    } catch (e) {
-        return { streams: [] };
     }
+    return { streams: [] };
 });
 
 const port = process.env.PORT || 7000;
