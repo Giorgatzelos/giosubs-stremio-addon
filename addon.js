@@ -9,7 +9,8 @@ const manifest = {
     description: 'Φέρνει αποτελέσματα [GioSubs] απευθείας από mirrors του 1337x',
     resources: ['stream'],
     types: ['movie', 'series'],
-    idPrefixes: ['tt', 'kitsu']
+    idPrefixes: ['tt', 'kitsu'],
+    catalogs": [],
 };
 
 const builder = new addonBuilder(manifest);
