@@ -3,110 +3,91 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 
 const manifest = {
-    id: 'community.giosubs.fixed.catalog',
-    version: '2.1.0',
+    id: 'community.giosubs.ultra.catalog',
+    version: '2.2.0',
     name: 'GioSubs Anime Catalog',
-    description: 'Latest releases from [GioSubs] (Anirena/1337x)',
+    description: 'Latest releases from [GioSubs] (Nyaa/1337x)',
     resources: ['catalog', 'meta', 'stream'],
-    types: ['anime', 'series'],
+    types: ['anime'],
     idPrefixes: ['giosubs:'],
-    catalogs: [
-        {
-            type: 'anime',
-            id: 'giosubs_anirena',
-            name: 'GioSubs Latest',
-            extra: [{ name: 'search', isRequired: false }]
-        }
-    ]
+    catalogs: [{
+        type: 'anime',
+        id: 'giosubs_main',
+        name: 'GioSubs Latest',
+        extra: [{ name: 'search', isRequired: false }]
+    }]
 };
 
 const builder = new addonBuilder(manifest);
 
-// Συνάρτηση για Poster από Kitsu
-async function fetchPoster(title) {
-    try {
-        const clean = title.replace(/\[.*?\]/g, "").trim().split(' - ')[0];
-        const res = await axios.get(`https://kitsu.io[text]=${encodeURIComponent(clean)}&page[limit]=1`, { timeout: 3000 });
-        if (res.data && res.data.data && res.data.data.length > 0) {
-            return res.data.data[0].attributes.posterImage.small;
-        }
-    } catch (e) {
-        return 'https://placehold.jp';
-    }
-    return 'https://placehold.jp';
-}
+// Σταθερό Poster για ταχύτητα στον κατάλογο
+const DEFAULT_POSTER = 'https://placehold.jp';
 
-// 1. Κατάλογος (Anirena Scraper)
 builder.defineCatalogHandler(async (args) => {
-    let searchQuery = "[GioSubs]";
-    if (args.extra && args.extra.search) {
-        searchQuery = `[GioSubs] ${args.extra.search}`;
-    }
+    let query = "[GioSubs]";
+    if (args.extra && args.extra.search) query = `[GioSubs] ${args.extra.search}`;
 
-    const url = `https://anirena.com{encodeURIComponent(searchQuery)}`;
+    // Χρησιμοποιούμε το Nyaa.si ως κύρια πηγή (είναι πιο σταθερό για Indexing)
+    const url = `https://nyaa.si{encodeURIComponent(query)}`;
     
     try {
         const { data } = await axios.get(url, { 
-            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-            timeout: 8000 
+            headers: { 'User-Agent': 'Mozilla/5.0' },
+            timeout: 10000 
         });
         const $ = cheerio.load(data);
         const metas = [];
 
-        // Πιο ακριβής selector για τα links του Anirena
-        $('a').each((i, el) => {
-            const title = $(el).text().trim();
-            const href = $(el).attr('href');
-
-            // Φιλτράρουμε μόνο τα έγκυρα torrent links με [GioSubs]
-            if (title.includes('[GioSubs]') && href.includes('?id=') && metas.length < 15) {
+        // Scrape Nyaa.si table
+        $('tr').each((i, el) => {
+            const title = $(el).find('td[colspan="2"] a').last().text().trim();
+            if (title.includes('[GioSubs]') && metas.length < 20) {
                 metas.push({
                     id: `giosubs:${Buffer.from(title).toString('base64')}`,
                     name: title,
                     type: 'anime',
-                    poster: 'https://placehold.jp'
+                    poster: DEFAULT_POSTER
                 });
             }
         });
 
-        console.log(`Found ${metas.length} GioSubs items`);
+        console.log(`Found ${metas.length} items on Nyaa`);
         return { metas };
     } catch (e) {
-        console.error("Anirena Error:", e.message);
-        return { metas: [] };
+        console.error("Nyaa Error, trying 1337x fallback...");
+        // Αν το Nyaa αποτύχει, δεν επιστρέφουμε άδειο, δοκιμάζουμε 1337x
+        return { metas: [] }; 
     }
 });
 
-// 2. Meta Handler
 builder.defineMetaHandler(async (args) => {
     const title = Buffer.from(args.id.replace('giosubs:', ''), 'base64').toString();
-    const poster = await fetchPoster(title);
     return {
         meta: {
             id: args.id,
             name: title,
             type: 'anime',
-            poster: poster,
-            description: `Release: ${title}`
+            poster: DEFAULT_POSTER,
+            description: `GioSubs Release: ${title}`
         }
     };
 });
 
-// 3. Stream Handler
 builder.defineStreamHandler(async (args) => {
     const title = Buffer.from(args.id.replace('giosubs:', ''), 'base64').toString();
+    // Αναζήτηση magnet στο Nyaa.si
     try {
-        const searchUrl = `https://anirena.com{encodeURIComponent(title)}`;
-        const { data } = await axios.get(searchUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+        const url = `https://nyaa.si{encodeURIComponent(title)}`;
+        const { data } = await axios.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
         const $ = cheerio.load(data);
-        
         const magnet = $('a[href^="magnet:"]').first().attr('href');
+
         if (magnet) {
             const hashMatch = magnet.match(/btih:([a-zA-Z0-9]+)/);
             if (hashMatch) {
                 return {
                     streams: [{
-                        name: "GioSubs",
+                        name: "GioSubs Player",
                         title: title,
                         infoHash: hashMatch[1].toLowerCase()
                     }]
