@@ -4,9 +4,9 @@ const cheerio = require('cheerio');
 
 const manifest = {
     id: 'community.toonshub.proxy.final',
-    version: '3.1.0',
+    version: '4.0.0',
     name: 'ToonsHub Catalog',
-    description: 'Latest releases for [ToonsHub]',
+    description: 'Latest [ToonsHub] via AllOrigins Proxy',
     resources: ['catalog', 'meta', 'stream'],
     types: ['anime'],
     idPrefixes: ['thub:'],
@@ -19,29 +19,25 @@ const manifest = {
 
 const builder = new addonBuilder(manifest);
 
-// Χρησιμοποιούμε mirror που συνήθως είναι "ανοιχτός" στο Render
-const BASE_URL = "https://nyaa.si";
-
-async function getPage(query) {
+// Χρήση Proxy για παράκαμψη του μπλοκαρίσματος του Render
+async function fetchWithProxy(url) {
     try {
-        const res = await axios.get(BASE_URL + encodeURIComponent(query), {
-            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/110.0.0.0 Safari/537.36' },
-            timeout: 12000
-        });
-        return res.data;
+        const proxyUrl = `https://allorigins.win{encodeURIComponent(url)}`;
+        const response = await axios.get(proxyUrl, { timeout: 15000 });
+        return response.data.contents; // Το AllOrigins επιστρέφει το HTML μέσα στο πεδίο contents
     } catch (e) {
+        console.error("Proxy Fetch Failed:", e.message);
         return null;
     }
 }
 
 builder.defineCatalogHandler(async (args) => {
-    const html = await getPage("[ToonsHub]");
+    const html = await fetchWithProxy("https://nyaa.si");
     if (!html) return { metas: [] };
 
     const $ = cheerio.load(html);
     const metas = [];
 
-    // Selector για τον πίνακα του Nyaa
     $('tr').each((i, el) => {
         const title = $(el).find('td[colspan="2"] a').last().text().trim();
         if (title.includes('[ToonsHub]') && metas.length < 20) {
@@ -72,7 +68,7 @@ builder.defineMetaHandler(async (args) => {
 
 builder.defineStreamHandler(async (args) => {
     const title = Buffer.from(args.id.replace('thub:', ''), 'base64').toString();
-    const html = await getPage(title);
+    const html = await fetchWithProxy(`https://nyaa.si{encodeURIComponent(title)}`);
     if (!html) return { streams: [] };
 
     const $ = cheerio.load(html);
