@@ -9,7 +9,7 @@ const manifest = {
     description: 'Latest releases for Locke (Nyaa/Anirena Proxy)',
     resources: ['catalog', 'meta', 'stream'],
     types: ['anime'],
-    idPrefixes: ['locke:'],
+    idPrefixes: ['lock'],
     catalogs: [{
         type: 'anime',
         id: 'locke_main',
