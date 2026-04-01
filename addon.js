@@ -3,10 +3,10 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 
 const manifest = {
-    id: 'community.toonshub.final.catalog',
-    version: '3.0.0',
+    id: 'community.toonshub.proxy.final',
+    version: '3.1.0',
     name: 'ToonsHub Catalog',
-    description: 'Latest [ToonsHub] releases from Anirena',
+    description: 'Latest releases for [ToonsHub]',
     resources: ['catalog', 'meta', 'stream'],
     types: ['anime'],
     idPrefixes: ['thub:'],
@@ -19,40 +19,32 @@ const manifest = {
 
 const builder = new addonBuilder(manifest);
 
-// Συνάρτηση για να "ξεγελάμε" τα μπλοκαρίσματα
-async function fetchPage(url) {
+// Χρησιμοποιούμε mirror που συνήθως είναι "ανοιχτός" στο Render
+const BASE_URL = "https://nyaa.si";
+
+async function getPage(query) {
     try {
-        const response = await axios.get(url, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.5',
-                'Connection': 'keep-alive',
-                'Upgrade-Insecure-Requests': '1'
-            },
-            timeout: 10000
+        const res = await axios.get(BASE_URL + encodeURIComponent(query), {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/110.0.0.0 Safari/537.36' },
+            timeout: 12000
         });
-        return response.data;
+        return res.data;
     } catch (e) {
-        console.error("Fetch failed for:", url, e.message);
         return null;
     }
 }
 
-// 1. Κατάλογος από Anirena (πιο σταθερό selector)
 builder.defineCatalogHandler(async (args) => {
-    const html = await fetchPage("https://anirena.com");
+    const html = await getPage("[ToonsHub]");
     if (!html) return { metas: [] };
 
     const $ = cheerio.load(html);
     const metas = [];
 
-    // Στο Anirena τα torrents είναι συνήθως σε <tr> ή σε .torrent-box
-    $('.torrent-box, tr').each((i, el) => {
-        const titleElement = $(el).find('a').filter((i, a) => $(a).text().includes('[ToonsHub]')).first();
-        const title = titleElement.text().trim();
-        
-        if (title && metas.length < 20) {
+    // Selector για τον πίνακα του Nyaa
+    $('tr').each((i, el) => {
+        const title = $(el).find('td[colspan="2"] a').last().text().trim();
+        if (title.includes('[ToonsHub]') && metas.length < 20) {
             metas.push({
                 id: `thub:${Buffer.from(title).toString('base64')}`,
                 name: title,
@@ -65,7 +57,6 @@ builder.defineCatalogHandler(async (args) => {
     return { metas };
 });
 
-// 2. Meta Handler
 builder.defineMetaHandler(async (args) => {
     const title = Buffer.from(args.id.replace('thub:', ''), 'base64').toString();
     return {
@@ -79,10 +70,9 @@ builder.defineMetaHandler(async (args) => {
     };
 });
 
-// 3. Stream Handler (Απευθείας magnet)
 builder.defineStreamHandler(async (args) => {
     const title = Buffer.from(args.id.replace('thub:', ''), 'base64').toString();
-    const html = await fetchPage(`https://anirena.com{encodeURIComponent(title)}`);
+    const html = await getPage(title);
     if (!html) return { streams: [] };
 
     const $ = cheerio.load(html);
