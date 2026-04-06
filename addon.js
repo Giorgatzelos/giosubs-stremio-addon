@@ -8,7 +8,7 @@ const manifest = {
     name: 'GioSubs 1337x Catalog',
     description: 'Latest [GioSubs] releases via 1337x RSS Feed',
     resources: ['catalog', 'meta', 'stream'],
-    types: ['anime', 'series'],
+    types: ['anime', 'movies'],
     idPrefixes: ['giosubs:'],
     catalogs: [{
         type: 'anime',
