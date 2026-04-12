@@ -1,7 +1,0 @@
-{
-  "name": "anirena-giosubs-vercel",
-  "dependencies": {
-    "stremio-addon-sdk": "^1.6.0",
-    "axios": "^1.6.0"
-  }
-}
